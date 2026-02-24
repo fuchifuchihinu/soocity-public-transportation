@@ -547,7 +547,6 @@ function initApp() {
         db.stopTimesByTrip[st.trip_id].push(st);
     });
     
-    // ドロップダウン用のリスト作成
     stopNamesList = Object.keys(db.nameToIds).sort();
 
     document.getElementById('uploadView').classList.add('hidden');
@@ -584,7 +583,6 @@ function filterDropdown(inputId) {
                 document.getElementById(inputId).value = name;
                 dropdown.classList.remove('show');
                 
-                // 時刻表タブの検索だった場合は、選択と同時に路線リストを絞り込む
                 if (inputId === 'routeSearchInput') {
                     renderRouteList();
                 }
@@ -712,13 +710,15 @@ function executeSearch() {
 
     setTimeout(() => {
         const finalResults = findRoutes(sName, eName, timeStr, dateStr, isArr);
-        renderSearchResults(finalResults, sName, eName, sIds, eIds);
+        // エラー判定用に必要な引数を追加して渡しています
+        renderSearchResults(finalResults, sName, eName, sIds, eIds, timeStr, dateStr, isArr);
     }, 50);
 }
 
 function findRoutes(sName, eName, timeStr, dateStr, isArr) {
     let results = [];
     let queue = [];
+    // ユーザー指定の10に変更しました
     const MAX_LEGS = 10; 
     let bestTime = {}; 
     
@@ -732,7 +732,8 @@ function findRoutes(sName, eName, timeStr, dateStr, isArr) {
 
     let iterations = 0;
     
-    while(queue.length > 0 && iterations < 15000) {
+    // 乗り換え上限が増えたため、少し多めに探索できるようにしました
+    while(queue.length > 0 && iterations < 30000) {
         iterations++;
         if (!isArr) queue.sort((a, b) => a.currentTime.localeCompare(b.currentTime));
         else queue.sort((a, b) => b.currentTime.localeCompare(a.currentTime));
@@ -839,10 +840,54 @@ function findRoutes(sName, eName, timeStr, dateStr, isArr) {
     return uniqueResults;
 }
 
-function renderSearchResults(finalResults, sName, eName, sIds, eIds) {
+// エラーメッセージ判定のために引数を増やしました
+function renderSearchResults(finalResults, sName, eName, sIds, eIds, timeStr, dateStr, isArr) {
     let html = `<div class="mt-3">`;
     if (!finalResults.length) {
-        html += `<div class="alert alert-warning small rounded-4 shadow-sm">指定条件に合う便は見つかりませんでした。</div>`;
+        let msg = "指定条件に合う便は見つかりませんでした。";
+        
+        // エラー理由の推測ロジック
+        const d = new Date(dateStr.substring(0,4), dateStr.substring(4,6)-1, dateStr.substring(6,8));
+        const dayStr = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()] + '曜';
+
+        let startHasService = false, startLatestTime = "00:00:00";
+        sIds.forEach(sid => {
+            gtfs.stop_times.filter(st => st.stop_id === sid).forEach(st => {
+                const trip = gtfs.trips.find(t => t.trip_id === st.trip_id);
+                if (trip && checkService(trip.service_id, dateStr)) {
+                    startHasService = true;
+                    if (st.departure_time > startLatestTime) startLatestTime = st.departure_time;
+                }
+            });
+        });
+
+        let endHasService = false, endEarliestTime = "99:99:99";
+        eIds.forEach(eid => {
+            gtfs.stop_times.filter(st => st.stop_id === eid).forEach(st => {
+                const trip = gtfs.trips.find(t => t.trip_id === st.trip_id);
+                if (trip && checkService(trip.service_id, dateStr)) {
+                    endHasService = true;
+                    if (st.arrival_time < endEarliestTime) endEarliestTime = st.arrival_time;
+                }
+            });
+        });
+
+        if (!startHasService) {
+            msg = `指定された日付（${dayStr}）は、出発地「${sName}」を通る便が運行していません。`;
+        } else if (!endHasService) {
+            msg = `指定された日付（${dayStr}）は、到着地「${eName}」を通る便が運行していません。`;
+        } else {
+            if (!isArr && startLatestTime < timeStr) {
+                msg = `指定された時刻（${timeStr.slice(0,5)}）以降、出発地「${sName}」からの便は本日の運行を終了しています。`;
+            } else if (isArr && endEarliestTime > timeStr) {
+                msg = `指定された時刻（${timeStr.slice(0,5)}）以前に、到着地「${eName}」に着く便はありません。`;
+            } else {
+                msg = "指定された条件で到着地まで向かう経路が見つかりませんでした。時間や日付を変えてお試しください。";
+            }
+        }
+        
+        // 分かりやすく太字で表示します
+        html += `<div class="alert alert-warning small rounded-4 shadow-sm fw-bold">🙇‍♂️ ${msg}</div>`;
     }
 
     finalResults.forEach(r => {
@@ -876,16 +921,17 @@ function renderSearchResults(finalResults, sName, eName, sIds, eIds) {
         html += htmlSnippet;
     });
 
-    const sC = db.stopCoords[sIds[0]];
-    const eC = db.stopCoords[eIds[0]];
-    let mUrl = "";
-    if (sC && sC.lat && eC && eC.lat) {
-        mUrl = `https://www.google.com/maps/dir/?api=1&origin=${sC.lat},${sC.lon}&destination=${eC.lat},${eC.lon}&travelmode=transit`;
-    } else {
-        mUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(sName)}&destination=${encodeURIComponent(eName)}&travelmode=transit`;
+    if (finalResults.length > 0) {
+        const sC = db.stopCoords[sIds[0]];
+        const eC = db.stopCoords[eIds[0]];
+        let mUrl = "";
+        if (sC && sC.lat && eC && eC.lat) {
+            mUrl = `https://www.google.com/maps/dir/?api=1&origin=${sC.lat},${sC.lon}&destination=${eC.lat},${eC.lon}&travelmode=transit`;
+        } else {
+            mUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(sName)}&destination=${encodeURIComponent(eName)}&travelmode=transit`;
+        }
+        html += `<a href="${mUrl}" target="_blank" class="btn btn-primary w-100 mt-2 py-3 shadow rounded-pill fw-bold">Googleマップを表示する</a></div>`;
     }
-    
-    html += `<a href="${mUrl}" target="_blank" class="btn btn-primary w-100 mt-2 py-3 shadow rounded-pill fw-bold">Googleマップを表示する</a></div>`;
     
     document.getElementById('searchResults').innerHTML = html;
 }
