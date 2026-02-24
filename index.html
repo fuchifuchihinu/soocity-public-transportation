@@ -2,7 +2,7 @@
 <html lang="ja"><head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>地域交通GTFS検索</title>
+    <title>「思いやりバス」「思いやりタクシー」検索</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
     <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&amp;display=swap" rel="stylesheet">
@@ -249,7 +249,7 @@
 
         @media (max-width: 576px) {
             .btn-primary { width: 100%; margin-top: 10px; }
-            .navbar-brand { font-size: 1.2rem; }
+            .navbar-brand { font-size: 1.1rem; }
             .card-body { padding: 1rem; }
         }
         .hidden { display: none; }
@@ -259,7 +259,7 @@
 
 <nav class="navbar fixed-top">
     <div class="container">
-        <span class="navbar-brand">☕ 地域交通GTFS検索</span>
+        <span class="navbar-brand">🚌「思いやりバス」「思いやりタクシー」検索</span>
         <div id="navButtons" class="">
             <button class="btn btn-outline-primary btn-sm me-1 rounded-pill" onclick="showView('search')">経路検索</button>
             <button class="btn btn-outline-primary btn-sm me-1 rounded-pill" onclick="showView('timetable')">時刻表</button>
@@ -274,7 +274,7 @@
         <div class="card mt-4">
             <div class="card-body text-center py-5">
                 <h4 class="mb-3" style="color:var(--primary);">Welcome</h4>
-                <p class="text-muted mb-4">GTFSデータ(ZIP)をアップロードして始めましょう</p>
+                <p class="text-muted mb-4">交通データ(ZIP)をアップロードして始めましょう</p>
                 <div id="dropZone" class="drop-zone py-5 mb-3">
                     <span style="font-size: 2rem;">📂</span><br>
                     タップまたはドロップしてファイルを選択
@@ -290,7 +290,7 @@
         <div id="searchTab">
             <div class="card mt-3">
                 <div class="card-body">
-                    <h5 class="mb-3" style="color:var(--text-sub); border-bottom:1px solid #eee; padding-bottom:5px;">Search Route</h5>
+                    <h5 class="mb-3" style="color:var(--text-sub); border-bottom:1px solid #eee; padding-bottom:5px;">経路を検索</h5>
                     
                     <div class="row g-2 mb-3">
                         <div class="col-12 custom-dropdown">
@@ -346,7 +346,10 @@
                 <div class="card mb-3">
                     <div class="card-body">
                         <label class="small fw-bold mb-2" style="color:var(--text-sub);">バス停名で絞り込み</label>
-                        <input type="text" id="routeSearchInput" class="form-control" placeholder="例: 市役所" oninput="renderRouteList()">
+                        <div class="custom-dropdown">
+                            <input type="text" id="routeSearchInput" class="form-control" placeholder="バス停名を選択・検索" autocomplete="off" onfocus="showDropdown('routeSearchInput')" oninput="filterDropdown('routeSearchInput'); renderRouteList()" onblur="hideDropdownDelayed('routeSearchInput')">
+                            <div id="routeSearchInput-dropdown" class="custom-dropdown-menu shadow"></div>
+                        </div>
                     </div>
                 </div>
                 <div id="routeList" class="mb-5"><div class="region-header header-bus">バス</div><div class="list-group"><button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="showTimetable('30')">
@@ -580,6 +583,11 @@ function filterDropdown(inputId) {
             div.onclick = function() {
                 document.getElementById(inputId).value = name;
                 dropdown.classList.remove('show');
+                
+                // 時刻表タブの検索だった場合は、選択と同時に路線リストを絞り込む
+                if (inputId === 'routeSearchInput') {
+                    renderRouteList();
+                }
             };
             dropdown.appendChild(div);
             count++;
@@ -662,7 +670,6 @@ function renderTimetableTable() {
     h += `</tr></thead><tbody>`;
     currentStopIds.forEach(sid => {
         const c = db.stopCoords[sid];
-        // 修正ポイント①: 時刻表のMapリンクを確実に座標検索の正しいURLに変更しました
         const mUrl = (c && c.lat && c.lon) 
             ? `https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lon}` 
             : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(db.stopIdToName[sid])}`;
@@ -869,7 +876,6 @@ function renderSearchResults(finalResults, sName, eName, sIds, eIds) {
         html += htmlSnippet;
     });
 
-    // 修正ポイント②: 経路検索のMapリンクを確実に座標（lat, lon）での経路探索になるよう修正しました
     const sC = db.stopCoords[sIds[0]];
     const eC = db.stopCoords[eIds[0]];
     let mUrl = "";
@@ -879,7 +885,7 @@ function renderSearchResults(finalResults, sName, eName, sIds, eIds) {
         mUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(sName)}&destination=${encodeURIComponent(eName)}&travelmode=transit`;
     }
     
-    html += `<a href="${mUrl}" target="_blank" class="btn btn-primary w-100 mt-2 py-3 shadow rounded-pill fw-bold">Googleマップで全体の経路を見る</a></div>`;
+    html += `<a href="${mUrl}" target="_blank" class="btn btn-primary w-100 mt-2 py-3 shadow rounded-pill fw-bold">Googleマップを表示する</a></div>`;
     
     document.getElementById('searchResults').innerHTML = html;
 }
@@ -896,7 +902,7 @@ function showView(v) { document.getElementById('searchTab').classList.toggle('hi
 function exportHtmlWithData() {
     const script = document.getElementById('embeddedData'); script.textContent = JSON.stringify(gtfs);
     const blob = new Blob(["<!DOCTYPE html>\n" + document.documentElement.outerHTML], { type: "text/html" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "地域交通検索_カフェ風.html"; a.click();
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "公共交通公開用.html"; a.click();
 }
 </script>
 
